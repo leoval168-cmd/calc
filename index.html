@@ -1,0 +1,388 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Calculator</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Calculator">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#000000">
+<meta name="color-scheme" content="dark">
+<meta name="format-detection" content="telephone=no">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<style>
+  :root {
+    --gap: 12px;
+    --num: #333335;
+    --num-active: #737377;
+    --util: #a5a5a5;
+    --util-active: #d9d9d9;
+    --op: #ff9f0a;
+    --op-active: #fbc78d;
+    --op-selected-bg: #fff;
+    --op-selected-fg: #ff9f0a;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; }
+  html, body {
+    margin: 0; height: 100%; background: #000; color: #fff; overflow: hidden;
+    overscroll-behavior: none; touch-action: manipulation;
+    -webkit-user-select: none; user-select: none;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
+  }
+  body { position: fixed; inset: 0; }
+  #app {
+    height: 100%; display: flex; flex-direction: column; justify-content: flex-end;
+    padding: env(safe-area-inset-top) calc(var(--gap) + env(safe-area-inset-right))
+             calc(var(--gap) + env(safe-area-inset-bottom)) calc(var(--gap) + env(safe-area-inset-left));
+    max-width: 520px; margin: 0 auto;
+  }
+  #screen { padding: 0 8px 6px; text-align: right; }
+  #expr { height: 24px; font-size: 18px; color: rgba(255,255,255,.45); white-space: nowrap; overflow: hidden; }
+  #display {
+    font-weight: 300; line-height: 1.05; white-space: nowrap; font-size: 88px;
+    font-variant-numeric: tabular-nums; min-height: 92px; display: flex; align-items: flex-end; justify-content: flex-end;
+  }
+  #keys { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--gap); }
+  button.k {
+    appearance: none; border: 0; outline: 0; color: #fff; background: var(--num);
+    font: 400 clamp(26px, 8.5vw, 38px) -apple-system, "SF Pro Display", "Helvetica Neue", sans-serif;
+    aspect-ratio: 1; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    transition: background-color .35s ease-out, color .35s ease-out; cursor: pointer; padding: 0;
+  }
+  button.k:active, button.k.down { background: var(--num-active); transition: none; }
+  button.k.util { background: var(--util); color: #000; font-size: clamp(24px, 7.6vw, 34px); }
+  button.k.util:active, button.k.util.down { background: var(--util-active); }
+  button.k.op { background: var(--op); font-size: clamp(32px, 10vw, 44px); }
+  button.k.op:active, button.k.op.down { background: var(--op-active); }
+  button.k.op.sel { background: var(--op-selected-bg); color: var(--op-selected-fg); }
+  button.k.zero { grid-column: span 2; aspect-ratio: auto; border-radius: 999px; justify-content: flex-start; padding-left: 8.5%; }
+  /* Settings sheet (opened by long-pressing AC) */
+  #sheet { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: none; align-items: flex-end; justify-content: center; z-index: 10; }
+  #sheet.open { display: flex; }
+  #panel {
+    width: 100%; max-width: 520px; background: #1c1c1e; border-radius: 22px 22px 0 0;
+    padding: 20px 20px calc(20px + env(safe-area-inset-bottom)); font-size: 16px; line-height: 1.4;
+  }
+  #panel h2 { margin: 0 0 4px; font-size: 20px; font-weight: 600; }
+  #panel p { margin: 4px 0 14px; color: rgba(255,255,255,.6); font-size: 14px; }
+  #panel label { display: block; font-size: 13px; color: rgba(255,255,255,.6); margin: 12px 0 6px; }
+  #panel input {
+    width: 100%; font-size: 17px; padding: 12px; border-radius: 10px; border: 0; background: #2c2c2e; color: #fff;
+    -webkit-user-select: text; user-select: text;
+  }
+  #panel .row { display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
+  #panel button {
+    flex: 1 1 auto; font: 600 16px -apple-system, sans-serif; padding: 13px 14px; border: 0; border-radius: 12px;
+    background: #2c2c2e; color: #fff; cursor: pointer;
+  }
+  #panel button.primary { background: var(--op); color: #000; }
+  #panel button.danger { color: #ff453a; }
+  #status { font-size: 14px; margin-top: 10px; color: #8e8e93; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="screen">
+    <div id="expr"></div>
+    <div id="display">0</div>
+  </div>
+  <div id="keys"></div>
+</div>
+
+<div id="sheet" role="dialog" aria-modal="true" aria-label="Calculator settings">
+  <div id="panel">
+    <h2>Calculator settings</h2>
+    <p>Choose a private key sequence. It is stored only on this iPhone, as a salted hash, never as plain text.</p>
+    <label for="sc">Shortcut to run (name in the Shortcuts app)</label>
+    <input id="sc" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" value="Launch Muse">
+    <div id="status"></div>
+    <div class="row">
+      <button id="rec" class="primary">Record sequence</button>
+      <button id="del" class="danger">Remove</button>
+      <button id="close">Done</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- tiny synchronous SHA-256 (so the launch stays inside the tap, which iOS requires) ---------- */
+  var K = new Uint32Array([
+    0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
+    0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
+    0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
+    0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2]);
+  function sha256(bytes) {
+    var l = bytes.length, n = ((l + 9 + 63) >> 6) << 6, m = new Uint8Array(n);
+    m.set(bytes); m[l] = 0x80;
+    var dv = new DataView(m.buffer); dv.setUint32(n - 4, (l * 8) >>> 0); dv.setUint32(n - 8, Math.floor(l / 0x20000000));
+    var h = new Uint32Array([0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19]), w = new Uint32Array(64);
+    function rr(x, c) { return (x >>> c) | (x << (32 - c)); }
+    for (var o = 0; o < n; o += 64) {
+      for (var i = 0; i < 16; i++) w[i] = dv.getUint32(o + i * 4);
+      for (i = 16; i < 64; i++) {
+        var s0 = rr(w[i-15],7) ^ rr(w[i-15],18) ^ (w[i-15] >>> 3), s1 = rr(w[i-2],17) ^ rr(w[i-2],19) ^ (w[i-2] >>> 10);
+        w[i] = (w[i-16] + s0 + w[i-7] + s1) >>> 0;
+      }
+      var a=h[0],b=h[1],c=h[2],d=h[3],e=h[4],f=h[5],g=h[6],hh=h[7];
+      for (i = 0; i < 64; i++) {
+        var S1 = rr(e,6) ^ rr(e,11) ^ rr(e,25), ch = (e & f) ^ (~e & g), t1 = (hh + S1 + ch + K[i] + w[i]) >>> 0;
+        var S0 = rr(a,2) ^ rr(a,13) ^ rr(a,22), mj = (a & b) ^ (a & c) ^ (b & c), t2 = (S0 + mj) >>> 0;
+        hh=g; g=f; f=e; e=(d + t1) >>> 0; d=c; c=b; b=a; a=(t1 + t2) >>> 0;
+      }
+      h[0]+=a;h[1]+=b;h[2]+=c;h[3]+=d;h[4]+=e;h[5]+=f;h[6]+=g;h[7]+=hh;
+    }
+    var out = new Uint8Array(32), ov = new DataView(out.buffer);
+    for (i = 0; i < 8; i++) ov.setUint32(i * 4, h[i]);
+    return out;
+  }
+  var enc = new TextEncoder();
+  function hex(u8) { return Array.prototype.map.call(u8, function (x) { return ("0" + x.toString(16)).slice(-2); }).join(""); }
+  function hashSeq(seq, salt) {           // 3000 chained rounds: cheap per keypress, slows offline guessing a little
+    var d = sha256(enc.encode(salt + "|" + seq.join(",")));
+    for (var i = 0; i < 3000; i++) d = sha256(d);
+    return hex(d);
+  }
+  function randSalt() {
+    var a = new Uint8Array(16);
+    (window.crypto || window.msCrypto).getRandomValues(a);
+    return hex(a);
+  }
+
+  /* ---------- persistent config ---------- */
+  var CFG_KEY = "calc.cfg.v1";
+  var cfg = { shortcut: "Launch Muse", salt: null, hash: null, len: 0 };
+  try { var saved = JSON.parse(localStorage.getItem(CFG_KEY) || "null"); if (saved) cfg = Object.assign(cfg, saved); } catch (e) {}
+  function saveCfg() { try { localStorage.setItem(CFG_KEY, JSON.stringify(cfg)); } catch (e) {} }
+
+  /* ---------- calculator engine (left-to-right, like the iPhone basic calculator) ---------- */
+  var MAXD = 9;
+  var cur = "0";            // number being entered / shown (plain string)
+  var acc = null;           // stored left operand
+  var op = null;            // pending operator
+  var fresh = true;         // next digit starts a new number
+  var lastOp = null, lastB = null;   // for repeated "="
+  var error = false;
+  var exprText = "";
+
+  function val(s) { return parseFloat(s); }
+  function compute(a, b, o) {
+    switch (o) {
+      case "+": return a + b;
+      case "−": return a - b;
+      case "×": return a * b;
+      case "÷": return b === 0 ? NaN : a / b;
+    }
+    return b;
+  }
+  function plain(n) {                     // number -> storable string
+    if (!isFinite(n)) return "Error";
+    n = parseFloat(n.toPrecision(MAXD));
+    if (n === 0) return "0";
+    var ab = Math.abs(n);
+    if (ab >= 1e9 || ab < 1e-6) return n.toExponential().replace(/\.?0+e/, "e").replace("e+", "e");
+    return String(n);
+  }
+  function pretty(s) {                    // string -> displayed with thousands separators
+    if (s === "Error") return s;
+    if (/e/.test(s)) { var p = s.split("e"); return p[0] + "e" + p[1]; }
+    var neg = s[0] === "-", body = neg ? s.slice(1) : s, parts = body.split(".");
+    parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    return (neg ? "−" : "") + parts.join(".");
+  }
+
+  function press(k) {
+    if (error && k !== "AC") { return; }
+    if (/^[0-9]$/.test(k)) {
+      if (fresh) { cur = k; fresh = false; if (op === null) { acc = null; } }
+      else if (cur === "0") cur = k;
+      else if (cur.replace(/[-.]/g, "").length < MAXD) cur += k;
+    } else if (k === ".") {
+      if (fresh) { cur = "0."; fresh = false; if (op === null) acc = null; }
+      else if (cur.indexOf(".") < 0) cur += ".";
+    } else if (k === "±") {
+      if (cur !== "0" || /\./.test(cur)) cur = cur[0] === "-" ? cur.slice(1) : "-" + cur;
+      else cur = "-0";
+      if (fresh && op !== null) fresh = false;
+    } else if (k === "%") {
+      cur = plain(val(cur) / 100); fresh = true; if (op === null) lastOp = null;
+    } else if (k === "+" || k === "−" || k === "×" || k === "÷") {
+      if (op !== null && !fresh) {
+        var r = compute(acc, val(cur), op);
+        if (!isFinite(r)) return fail();
+        acc = r; cur = plain(r);
+      } else if (op === null) {
+        acc = val(cur);
+      }
+      op = k; fresh = true; lastOp = null;
+      exprText = pretty(plain(acc)) + " " + k;
+    } else if (k === "=") {
+      if (op !== null) {
+        var b = val(cur), res = compute(acc, b, op);
+        exprText = pretty(plain(acc)) + " " + op + " " + pretty(plain(b)) + " =";
+        lastOp = op; lastB = b;
+        if (!isFinite(res)) return fail();
+        cur = plain(res); acc = null; op = null; fresh = true;
+      } else if (lastOp !== null) {
+        var r2 = compute(val(cur), lastB, lastOp);
+        exprText = pretty(plain(val(cur))) + " " + lastOp + " " + pretty(plain(lastB)) + " =";
+        if (!isFinite(r2)) return fail();
+        cur = plain(r2); fresh = true;
+      }
+    }
+    render();
+  }
+  function fail() { error = true; cur = "Error"; acc = null; op = null; fresh = true; render(); }
+  function allClear() {
+    cur = "0"; acc = null; op = null; fresh = true; lastOp = null; lastB = null; error = false; exprText = ""; render();
+  }
+
+  /* ---------- rendering ---------- */
+  var elDisplay = document.getElementById("display"), elExpr = document.getElementById("expr"), elKeys = document.getElementById("keys");
+  var opButtons = {};
+  function fit() {
+    var max = Math.min(88, Math.max(48, window.innerHeight * 0.105)), w = elDisplay.parentElement.clientWidth - 16;
+    elDisplay.style.fontSize = max + "px";
+    var sw = elDisplay.scrollWidth;
+    if (sw > w) elDisplay.style.fontSize = Math.floor(max * w / sw) + "px";
+  }
+  var banner = null, bannerTimer = null;
+  function render() {
+    elDisplay.textContent = pretty(cur);
+    elExpr.textContent = banner !== null ? banner : exprText;
+    fit();
+    for (var o in opButtons) opButtons[o].classList.toggle("sel", op === o && fresh);
+  }
+  function flash(msg, ms) {
+    banner = msg; render();
+    clearTimeout(bannerTimer);
+    if (ms) bannerTimer = setTimeout(function () { banner = null; render(); }, ms);
+  }
+
+  var layout = [
+    ["AC","util"],["±","util"],["%","util"],["÷","op"],
+    ["7"],["8"],["9"],["×","op"],
+    ["4"],["5"],["6"],["−","op"],
+    ["1"],["2"],["3"],["+","op"],
+    ["0","zero"],["."],["=","op"]
+  ];
+  layout.forEach(function (it) {
+    var b = document.createElement("button");
+    b.className = "k " + (it[1] || ""); b.textContent = it[0]; b.setAttribute("data-k", it[0]);
+    b.setAttribute("aria-label", { "÷": "divide", "×": "multiply", "−": "subtract", "+": "add", "=": "equals", "±": "plus minus", "%": "percent", "AC": "all clear" }[it[0]] || it[0]);
+    if (it[1] === "op" && it[0] !== "=") opButtons[it[0]] = b;
+    elKeys.appendChild(b);
+  });
+
+  /* ---------- secret sequence ---------- */
+  var buffer = [];                 // last cfg.len keys
+  var recording = null;            // null | {stage: 1|2, first: [], keys: []}
+  var lastLaunch = 0;
+
+  function track(k) {
+    if (recording) {
+      recording.keys.push(k);
+      if (k === "=") finishRecordingStage();
+      return;
+    }
+    if (!cfg.hash || !cfg.len) return;
+    buffer.push(k);
+    if (buffer.length > cfg.len) buffer.shift();
+    if (buffer.length === cfg.len && hashSeq(buffer, cfg.salt) === cfg.hash) {
+      buffer = [];
+      launch();
+    }
+  }
+  function finishRecordingStage() {
+    var r = recording;
+    if (r.keys.length < 5) { recording = null; flash("Too short — use at least 5 keys", 2500); return; }
+    if (r.stage === 1) {
+      recording = { stage: 2, first: r.keys.slice(), keys: [] };
+      allClearQuiet(); flash("Repeat the sequence to confirm");
+    } else {
+      var same = r.first.length === r.keys.length && r.first.every(function (x, i) { return x === r.keys[i]; });
+      recording = null;
+      if (!same) { flash("Didn’t match — nothing saved", 3000); return; }
+      cfg.salt = randSalt(); cfg.len = r.keys.length; cfg.hash = hashSeq(r.keys, cfg.salt); saveCfg();
+      buffer = [];
+      flash("Saved", 1800);
+    }
+  }
+  function allClearQuiet() { cur = "0"; acc = null; op = null; fresh = true; lastOp = null; lastB = null; error = false; exprText = ""; }
+
+  function launch() {
+    var now = Date.now();
+    if (now - lastLaunch < 60000) return;      // one-minute cooldown, as before
+    lastLaunch = now;
+    var url = "shortcuts://run-shortcut?name=" + encodeURIComponent(cfg.shortcut || "Launch Muse");
+    var a = document.createElement("a");
+    a.href = url; a.style.display = "none"; document.body.appendChild(a);
+    a.click();                                  // synchronous, inside the user's tap
+    setTimeout(function () { a.remove(); }, 500);
+  }
+
+  /* ---------- input handling ---------- */
+  var holdTimer = null, held = false;
+  function handle(k) {
+    if (k === "AC") {
+      if (recording) { recording = null; banner = null; }
+      buffer = []; allClear(); return;
+    }
+    // Let the calculator run first, then check the secret, so the last "=" still shows a normal result.
+    press(k);
+    track(k);
+  }
+  elKeys.addEventListener("pointerdown", function (e) {
+    var b = e.target.closest("button.k"); if (!b) return;
+    held = false;
+    if (b.getAttribute("data-k") === "AC") {
+      clearTimeout(holdTimer);
+      holdTimer = setTimeout(function () { held = true; openSheet(); }, 1200);
+    }
+  });
+  ["pointerup", "pointercancel", "pointerleave"].forEach(function (ev) {
+    elKeys.addEventListener(ev, function () { clearTimeout(holdTimer); });
+  });
+  elKeys.addEventListener("click", function (e) {
+    var b = e.target.closest("button.k"); if (!b) return;
+    if (held) { held = false; return; }
+    handle(b.getAttribute("data-k"));
+  });
+  document.addEventListener("contextmenu", function (e) { e.preventDefault(); });
+  document.addEventListener("keydown", function (e) {      // hardware keyboard (iPad / Bluetooth)
+    if (document.getElementById("sheet").classList.contains("open")) return;
+    var m = { "*": "×", "/": "÷", "-": "−", "+": "+", ".": ".", "Enter": "=", "=": "=", "%": "%", "Escape": "AC", "Backspace": "AC" };
+    var k = /^[0-9]$/.test(e.key) ? e.key : m[e.key];
+    if (k) { e.preventDefault(); handle(k); }
+  });
+
+  /* ---------- settings sheet ---------- */
+  var sheet = document.getElementById("sheet"), sc = document.getElementById("sc"), status = document.getElementById("status");
+  function refreshStatus() { status.textContent = cfg.hash ? "Secret sequence is set (" + cfg.len + " keys)." : "No secret sequence set yet."; }
+  function openSheet() { sc.value = cfg.shortcut || "Launch Muse"; refreshStatus(); sheet.classList.add("open"); }
+  function closeSheet() { cfg.shortcut = sc.value.trim() || "Launch Muse"; saveCfg(); sheet.classList.remove("open"); }
+  document.getElementById("close").addEventListener("click", closeSheet);
+  document.getElementById("rec").addEventListener("click", function () {
+    closeSheet(); allClear(); buffer = [];
+    recording = { stage: 1, first: [], keys: [] };
+    flash("Enter your sequence, ending with =");
+  });
+  document.getElementById("del").addEventListener("click", function () {
+    cfg.hash = null; cfg.salt = null; cfg.len = 0; saveCfg(); buffer = []; refreshStatus();
+  });
+  sheet.addEventListener("click", function (e) { if (e.target === sheet) closeSheet(); });
+
+  window.addEventListener("resize", fit);
+  if (window.visualViewport) window.visualViewport.addEventListener("resize", fit);
+  render();
+
+  if ("serviceWorker" in navigator) { navigator.serviceWorker.register("sw.js").catch(function () {}); }
+})();
+</script>
+</body>
+</html>
